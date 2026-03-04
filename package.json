@@ -1,0 +1,24 @@
+{
+  "name": "pet-england-explorer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tallchap/pet-england-explorer.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/tallchap/pet-england-explorer/issues"
+  },
+  "homepage": "https://github.com/tallchap/pet-england-explorer#readme",
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}

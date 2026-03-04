@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
 const DATA_PATH = path.join(ROOT, 'data', 'pet_supplies_england.json');
 const OUT_DIR = path.join(ROOT, 'data', 'email_batches');
 
 const args = Object.fromEntries(
-  process.argv.slice(2).map(a => {
+  process.argv.slice(2).map((a) => {
     const [k, ...rest] = a.replace(/^--/, '').split('=');
     return [k, rest.join('=') || 'true'];
   })
@@ -16,10 +17,11 @@ const args = Object.fromEntries(
 const batchSize = Number(args.size || 500);
 const start = Number(args.start || 0);
 const dryRun = args['dry-run'] === 'true';
-const maxPages = Number(args.maxPages || 3);
-const concurrency = Number(args.concurrency || 8);
-const timeoutMs = Number(args.timeoutMs || 12000);
-const batchName = `batch_${String(start + 1).padStart(4, '0')}_${String(start + batchSize).padStart(4, '0')}`;
+const concurrency = Number(args.concurrency || 6);
+const maxDepth = Number(args.maxDepth || 2);
+const maxPagesPerDomain = Number(args.maxPagesPerDomain || 100);
+const navTimeoutMs = Number(args.navTimeoutMs || 12000);
+const batchName = args.batch || `batch_${String(start + 1).padStart(4, '0')}_${String(start + batchSize).padStart(4, '0')}_playwright`;
 
 const ZEROBOUNCE_API_KEY = process.env.ZEROBOUNCE_API_KEY || '';
 
@@ -28,6 +30,17 @@ function canonicalDomain(url) {
   try {
     const u = new URL(url);
     return u.hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function normalizeUrl(url) {
+  try {
+    const u = new URL(url);
+    u.hash = '';
+    if (u.pathname.endsWith('/')) u.pathname = u.pathname.slice(0, -1) || '/';
+    return u.toString();
   } catch {
     return '';
   }
@@ -45,10 +58,11 @@ function classifyEmail(email) {
 }
 
 function sourceWeight(source) {
-  if (source.includes('/contact')) return 30;
-  if (source.includes('/about')) return 22;
-  if (source.includes('/')) return 16;
-  return 10;
+  const s = String(source).toLowerCase();
+  if (s.includes('/contact')) return 30;
+  if (s.includes('/about')) return 22;
+  if (s.includes('/team')) return 20;
+  return 12;
 }
 
 function typeWeight(type) {
@@ -79,43 +93,32 @@ function confidence(candidate) {
 
 function chooseBest(candidates) {
   return [...candidates]
-    .map(c => ({ ...c, confidence_score: confidence(c) }))
+    .map((c) => ({ ...c, confidence_score: confidence(c) }))
     .sort((a, b) => b.confidence_score - a.confidence_score)[0] || null;
 }
 
 function findEmails(text) {
-  const re = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-  const found = text.match(re) || [];
-  const cleaned = found
-    .map(x => x.toLowerCase().replace(/[),.;:!?]+$/, ''))
-    .filter(x => !x.endsWith('.png') && !x.endsWith('.jpg') && !x.includes('example.com'));
-  return [...new Set(cleaned)];
-}
+  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+  const plain = text.match(emailRegex) || [];
 
-async function fetchWithTimeout(url) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, redirect: 'follow' });
-    if (!res.ok) return '';
-    return await res.text();
-  } catch {
-    return '';
-  } finally {
-    clearTimeout(t);
+  // Very basic obfuscation support: name [at] domain [dot] com
+  const obfRegex = /([a-zA-Z0-9._%+-]+)\s*(?:\[at\]|\(at\)|\sat\s|@)\s*([a-zA-Z0-9.-]+)\s*(?:\[dot\]|\(dot\)|\sdot\s|\.)\s*([a-zA-Z]{2,})/gi;
+  const obf = [];
+  let m;
+  while ((m = obfRegex.exec(text)) !== null) {
+    obf.push(`${m[1]}@${m[2]}.${m[3]}`);
   }
-}
 
-function pickPages(website) {
-  if (!website) return [];
-  let base;
-  try { base = new URL(website); } catch { return []; }
-  const pages = ['/', '/contact', '/contact-us', '/about', '/about-us', '/get-in-touch'];
-  return pages.slice(0, maxPages + 1).map(p => new URL(p, base).toString());
+  const all = [...plain, ...obf]
+    .map((x) => x.toLowerCase().replace(/[),.;:!?]+$/, ''))
+    .filter((x) => !x.endsWith('.png') && !x.endsWith('.jpg') && !x.includes('example.com'));
+
+  return [...new Set(all)];
 }
 
 async function validateWithZeroBounce(email) {
   if (!ZEROBOUNCE_API_KEY || dryRun) return { status: 'unknown', sub_status: '' };
+
   const u = new URL('https://api.zerobounce.net/v2/validate');
   u.searchParams.set('api_key', ZEROBOUNCE_API_KEY);
   u.searchParams.set('email', email);
@@ -131,32 +134,127 @@ async function validateWithZeroBounce(email) {
   }
 }
 
-async function processRow(row) {
-  const website = row.website_url || '';
-  const domain = canonicalDomain(website);
-  const pageUrls = pickPages(website);
+function seedUrls(websiteUrl) {
+  if (!websiteUrl) return [];
+  let base;
+  try { base = new URL(websiteUrl); } catch { return []; }
+  const paths = ['/', '/contact', '/contact-us', '/about', '/about-us', '/team', '/support'];
+  return [...new Set(paths.map((p) => new URL(p, base).toString()))];
+}
 
+function sameDomain(url, domain) {
+  try {
+    return canonicalDomain(url) === domain;
+  } catch {
+    return false;
+  }
+}
+
+async function crawlDomainEmails(browser, websiteUrl) {
+  const domain = canonicalDomain(websiteUrl);
+  if (!domain) return { candidates: [], pagesVisited: 0 };
+
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  const page = await context.newPage();
+  page.setDefaultNavigationTimeout(navTimeoutMs);
+
+  const queue = seedUrls(websiteUrl).map((u) => ({ url: normalizeUrl(u), depth: 0 }));
+  const seen = new Set();
   const candidates = [];
-  for (const p of pageUrls) {
-    const html = await fetchWithTimeout(p);
-    if (!html) continue;
-    const emails = findEmails(html);
-    for (const email of emails) {
-      candidates.push({
-        email,
-        email_type: classifyEmail(email),
-        source_url: p,
-        source_type: 'website_page',
-        verification_status: 'unknown',
-        verification_sub_status: ''
+  let pagesVisited = 0;
+
+  while (queue.length && pagesVisited < maxPagesPerDomain) {
+    const item = queue.shift();
+    if (!item || !item.url) continue;
+    if (seen.has(item.url)) continue;
+    seen.add(item.url);
+
+    try {
+      const response = await page.goto(item.url, { waitUntil: 'domcontentloaded' });
+      const ctype = String(response?.headers()['content-type'] || '').toLowerCase();
+      if (!ctype.includes('text/html')) continue;
+
+      pagesVisited++;
+
+      const data = await page.evaluate(() => {
+        const bodyText = document.body?.innerText || '';
+        const anchors = Array.from(document.querySelectorAll('a[href]')).map((a) => a.getAttribute('href') || '');
+        return { bodyText, anchors };
       });
+
+      const mailtos = data.anchors
+        .filter((h) => String(h).toLowerCase().startsWith('mailto:'))
+        .map((h) => h.replace(/^mailto:/i, '').split('?')[0].trim())
+        .filter(Boolean);
+
+      const textEmails = findEmails(data.bodyText);
+      const emails = [...new Set([...mailtos, ...textEmails])];
+      for (const email of emails) {
+        candidates.push({
+          email,
+          email_type: classifyEmail(email),
+          source_url: item.url,
+          source_type: 'playwright_page',
+          verification_status: 'unknown',
+          verification_sub_status: ''
+        });
+      }
+
+      if (item.depth < maxDepth) {
+        for (const href of data.anchors) {
+          if (!href || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) continue;
+          try {
+            const next = normalizeUrl(new URL(href, item.url).toString());
+            if (!next) continue;
+            if (!sameDomain(next, domain)) continue;
+            if (!seen.has(next)) queue.push({ url: next, depth: item.depth + 1 });
+          } catch {
+            // ignore malformed links
+          }
+        }
+      }
+    } catch {
+      // ignore page failures
     }
   }
+
+  await context.close();
 
   const deduped = Object.values(candidates.reduce((acc, c) => {
     acc[c.email] = acc[c.email] || c;
     return acc;
   }, {}));
+
+  return { candidates: deduped, pagesVisited };
+}
+
+async function processRow(browser, row) {
+  const website = row.website_url || '';
+  const domain = canonicalDomain(website);
+
+  if (!website || !domain) {
+    return {
+      place_id: row.place_id,
+      name: row.name,
+      formatted_address: row.formatted_address,
+      website_url: website,
+      website_domain: domain,
+      maps_url: row.maps_url || '',
+      best_email: '',
+      email_type: '',
+      source_url: '',
+      verification_status: 'unknown',
+      verification_sub_status: '',
+      confidence_score: 0,
+      candidates_found: 0,
+      pages_visited: 0,
+      notes: 'no_website',
+      processed_at: new Date().toISOString()
+    };
+  }
+
+  const crawled = await crawlDomainEmails(browser, website);
+  const deduped = crawled.candidates;
 
   for (const c of deduped) {
     const v = await validateWithZeroBounce(c.email);
@@ -180,6 +278,7 @@ async function processRow(row) {
     verification_sub_status: best?.verification_sub_status || '',
     confidence_score: best?.confidence_score ?? 0,
     candidates_found: deduped.length,
+    pages_visited: crawled.pagesVisited,
     notes: best ? 'ok' : 'no_email_found',
     processed_at: new Date().toISOString()
   };
@@ -192,22 +291,24 @@ function toCsv(rows) {
     const s = String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  return [headers.join(','), ...rows.map(r => headers.map(h => esc(r[h])).join(','))].join('\n');
+  return [headers.join(','), ...rows.map((r) => headers.map((h) => esc(r[h])).join(','))].join('\n');
 }
 
 async function pooled(items, limit, fn) {
   let i = 0;
   const out = Array(items.length);
-  async function worker() {
+
+  async function worker(workerId) {
     while (i < items.length) {
       const idx = i++;
-      out[idx] = await fn(items[idx], idx);
-      if ((idx + 1) % 25 === 0 || idx + 1 === items.length) {
+      out[idx] = await fn(items[idx], idx, workerId);
+      if ((idx + 1) % 10 === 0 || idx + 1 === items.length) {
         console.log(`Processed ${idx + 1}/${items.length}`);
       }
     }
   }
-  await Promise.all(Array.from({ length: Math.max(1, limit) }, worker));
+
+  await Promise.all(Array.from({ length: Math.max(1, limit) }, (_, w) => worker(w + 1)));
   return out;
 }
 
@@ -227,7 +328,11 @@ async function pooled(items, limit, fn) {
   fs.writeFileSync(inputPath, JSON.stringify(batch, null, 2));
 
   console.log(`Running ${batchName} (${batch.length} rows). dryRun=${dryRun}`);
-  const results = await pooled(batch, concurrency, processRow);
+  console.log(`Crawler=Playwright only | concurrency=${concurrency} | maxDepth=${maxDepth} | maxPagesPerDomain=${maxPagesPerDomain}`);
+
+  const browser = await chromium.launch({ headless: true });
+  const results = await pooled(batch, concurrency, async (row) => processRow(browser, row));
+  await browser.close();
 
   const jsonPath = path.join(OUT_DIR, `${batchName}_results.json`);
   const csvPath = path.join(OUT_DIR, `${batchName}_results.csv`);
@@ -239,12 +344,15 @@ async function pooled(items, limit, fn) {
     start,
     size: batch.length,
     dryRun,
+    crawler: 'playwright',
+    settings: { concurrency, maxDepth, maxPagesPerDomain, navTimeoutMs },
     zerobounce_enabled: Boolean(ZEROBOUNCE_API_KEY) && !dryRun,
-    with_best_email: results.filter(r => r.best_email).length,
-    valid: results.filter(r => r.verification_status === 'valid').length,
-    catch_all: results.filter(r => r.verification_status === 'catch-all').length,
-    invalid: results.filter(r => r.verification_status === 'invalid').length,
-    unknown: results.filter(r => r.verification_status === 'unknown').length,
+    with_best_email: results.filter((r) => r.best_email).length,
+    valid: results.filter((r) => r.verification_status === 'valid').length,
+    catch_all: results.filter((r) => r.verification_status === 'catch-all').length,
+    invalid: results.filter((r) => r.verification_status === 'invalid').length,
+    unknown: results.filter((r) => r.verification_status === 'unknown').length,
+    avg_pages_visited: Number((results.reduce((a, r) => a + (r.pages_visited || 0), 0) / results.length).toFixed(2)),
     generated_at: new Date().toISOString(),
     files: { inputPath, jsonPath, csvPath }
   };
