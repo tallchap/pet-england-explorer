@@ -53,7 +53,8 @@
 
   <script>
     const p = new URLSearchParams(location.search);
-    const batch = p.get('batch') || 'batch_0001_0500';
+    const rawBatch = p.get('batch') || 'batch_0001_0005';
+    const batch = rawBatch.replace(/[^a-zA-Z0-9_-]/g, '');
     const dataPath = `../data/email_batches/${batch}_results.json`;
 
     function statusClass(s) {
@@ -90,7 +91,7 @@
         `).join('');
       })
       .catch(err => {
-        document.getElementById('meta').textContent = err.message + ' (run the batch script first)';
+        document.getElementById('meta').textContent = `${err.message}. Tried: ${dataPath}`;
       });
   </script>
 </body>
