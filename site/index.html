@@ -38,7 +38,7 @@
   <div id="map"></div>
   <div class="tableWrap">
     <table>
-      <thead><tr><th>Name</th><th>Address</th><th>Rating</th><th>Reviews</th><th>Types</th><th>Map</th></tr></thead>
+      <thead><tr><th>Name</th><th>Phone</th><th>Address</th><th>Rating</th><th>Reviews</th><th>Types</th><th>Map</th></tr></thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
@@ -75,7 +75,7 @@
       const selectedTypes = getSelectedTypes();
 
       const filtered = allRows.filter(r => {
-        const hay = `${r.name} ${r.formatted_address} ${r.types}`.toLowerCase();
+        const hay = `${r.name} ${r.phone || ''} ${r.formatted_address} ${r.types}`.toLowerCase();
         if (q && !hay.includes(q)) return false;
         if ((r.rating || 0) < minRating) return false;
         if ((r.user_ratings_total || 0) < minReviews) return false;
@@ -94,6 +94,7 @@
       tbody.innerHTML = filtered.map(r => `
         <tr>
           <td>${r.name || ''}</td>
+          <td>${r.phone || ''}</td>
           <td>${r.formatted_address || ''}</td>
           <td>${r.rating ?? ''}</td>
           <td>${r.user_ratings_total ?? ''}</td>
