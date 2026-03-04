@@ -17,7 +17,9 @@
     .typesWrap { display: flex; flex-wrap: wrap; gap: 8px 12px; max-height: 120px; overflow: auto; }
     .typeItem { font-size: 12px; white-space: nowrap; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { border-top: 1px solid #eee; padding: 6px; text-align: left; }
+    th, td { border-top: 1px solid #eee; padding: 6px; text-align: left; vertical-align: top; }
+    .descCell { max-width: 360px; line-height: 1.25; color: #333; }
+    .muted { color: #666; font-size: 12px; }
     th { position: sticky; top: 0; background: #fafafa; }
     .tableWrap { max-height: 42vh; overflow: auto; }
   </style>
@@ -40,7 +42,7 @@
   <div id="map"></div>
   <div class="tableWrap">
     <table>
-      <thead><tr><th>Name</th><th>Phone</th><th>Website</th><th>Address</th><th>Rating</th><th>Reviews</th><th>Types</th><th>Map</th></tr></thead>
+      <thead><tr><th>Name</th><th>Category</th><th>Description</th><th>Phone</th><th>Website</th><th>Address</th><th>Rating</th><th>Reviews</th><th>Types</th><th>Map</th></tr></thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
@@ -82,7 +84,7 @@
       const excludedTypes = getExcludedTypes();
 
       const matched = allRows.filter(r => {
-        const hay = `${r.name} ${r.phone || ''} ${r.website_domain || ''} ${r.website_url || ''} ${r.formatted_address} ${r.types}`.toLowerCase();
+        const hay = `${r.name} ${r.primary_type_display_name || ''} ${r.editorial_summary || ''} ${r.phone || ''} ${r.website_domain || ''} ${r.website_url || ''} ${r.formatted_address} ${r.types}`.toLowerCase();
         if (q && !hay.includes(q)) return false;
         if ((r.rating || 0) < minRating) return false;
         if ((r.user_ratings_total || 0) < minReviews) return false;
@@ -108,6 +110,8 @@
       tbody.innerHTML = filtered.map(r => `
         <tr>
           <td>${r.name || ''}</td>
+          <td>${r.primary_type_display_name || ''}<div class="muted">${r.primary_type || ''}</div></td>
+          <td class="descCell">${r.editorial_summary || r.primary_type_display_name || ''}</td>
           <td>${r.phone || ''}</td>
           <td>${r.website_url ? `<a href="${r.website_url}" target="_blank">${r.website_domain || 'Website'}</a>` : ''}</td>
           <td>${r.formatted_address || ''}</td>
