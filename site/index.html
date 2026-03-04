@@ -12,6 +12,10 @@
     button { padding: 8px 10px; border: 1px solid #aaa; border-radius: 6px; background: #fff; cursor: pointer; }
     #map { height: 48vh; }
     .meta { padding: 8px 10px; font-size: 14px; color: #333; }
+    .typesBox { padding: 8px 10px; border-top: 1px solid #eee; border-bottom: 1px solid #eee; }
+    .typesTitle { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .typesWrap { display: flex; flex-wrap: wrap; gap: 8px 12px; max-height: 120px; overflow: auto; }
+    .typeItem { font-size: 12px; white-space: nowrap; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { border-top: 1px solid #eee; padding: 6px; text-align: left; }
     th { position: sticky; top: 0; background: #fafafa; }
@@ -25,6 +29,10 @@
     <input id="minReviews" type="number" min="0" placeholder="Min reviews (e.g. 50)" />
     <input id="limit" type="number" min="50" max="5000" value="1000" placeholder="Row limit" />
     <button id="exportBtn">Export filtered CSV</button>
+  </div>
+  <div class="typesBox">
+    <div class="typesTitle">Type filter (checkboxes)</div>
+    <div id="typesWrap" class="typesWrap"></div>
   </div>
   <div class="meta" id="meta">Loading…</div>
   <div id="map"></div>
@@ -41,6 +49,7 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
+
     let allRows = [];
     let markers = L.layerGroup().addTo(map);
 
@@ -54,17 +63,28 @@
       return [headers.join(','), ...rows.map(r => headers.map(h => esc(r[h])).join(','))].join('\n');
     }
 
+    function getSelectedTypes() {
+      return [...document.querySelectorAll('.typeChk:checked')].map(x => x.value);
+    }
+
     function applyFilters() {
       const q = document.getElementById('q').value.trim().toLowerCase();
       const minRating = parseFloat(document.getElementById('minRating').value || '0');
       const minReviews = parseInt(document.getElementById('minReviews').value || '0', 10);
       const limit = parseInt(document.getElementById('limit').value || '1000', 10);
+      const selectedTypes = getSelectedTypes();
 
       const filtered = allRows.filter(r => {
         const hay = `${r.name} ${r.formatted_address} ${r.types}`.toLowerCase();
         if (q && !hay.includes(q)) return false;
         if ((r.rating || 0) < minRating) return false;
         if ((r.user_ratings_total || 0) < minReviews) return false;
+
+        if (selectedTypes.length > 0) {
+          const rowTypes = String(r.types || '').split('|').filter(Boolean);
+          if (!selectedTypes.some(t => rowTypes.includes(t))) return false;
+        }
+
         return true;
       }).slice(0, limit);
 
@@ -92,6 +112,21 @@
       window.__filtered = filtered;
     }
 
+    function renderTypeCheckboxes(rows) {
+      const counts = new Map();
+      rows.forEach(r => {
+        String(r.types || '').split('|').filter(Boolean).forEach(t => counts.set(t, (counts.get(t) || 0) + 1));
+      });
+
+      const types = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30);
+      const wrap = document.getElementById('typesWrap');
+      wrap.innerHTML = types.map(([type, n]) =>
+        `<label class="typeItem"><input class="typeChk" type="checkbox" value="${type}"> ${type} (${n})</label>`
+      ).join('');
+
+      [...document.querySelectorAll('.typeChk')].forEach(el => el.addEventListener('change', applyFilters));
+    }
+
     document.getElementById('q').addEventListener('input', applyFilters);
     document.getElementById('minRating').addEventListener('input', applyFilters);
     document.getElementById('minReviews').addEventListener('input', applyFilters);
@@ -109,7 +144,11 @@
 
     fetch('../data/pet_supplies_england.json')
       .then(r => r.json())
-      .then(rows => { allRows = rows; applyFilters(); })
+      .then(rows => {
+        allRows = rows;
+        renderTypeCheckboxes(rows);
+        applyFilters();
+      })
       .catch(err => { document.getElementById('meta').textContent = 'Failed to load data: ' + err; });
   </script>
 </body>
