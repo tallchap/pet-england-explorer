@@ -31,8 +31,10 @@
     <button id="exportBtn">Export filtered CSV</button>
   </div>
   <div class="typesBox">
-    <div class="typesTitle">Type filter (checkboxes)</div>
+    <div class="typesTitle">Include types (checkboxes)</div>
     <div id="typesWrap" class="typesWrap"></div>
+    <div class="typesTitle" style="margin-top:10px;">Exclude types (checkboxes)</div>
+    <div id="excludeTypesWrap" class="typesWrap"></div>
   </div>
   <div class="meta" id="meta">Loading…</div>
   <div id="map"></div>
@@ -67,12 +69,17 @@
       return [...document.querySelectorAll('.typeChk:checked')].map(x => x.value);
     }
 
+    function getExcludedTypes() {
+      return [...document.querySelectorAll('.typeExcludeChk:checked')].map(x => x.value);
+    }
+
     function applyFilters() {
       const q = document.getElementById('q').value.trim().toLowerCase();
       const minRating = parseFloat(document.getElementById('minRating').value || '0');
       const minReviews = parseInt(document.getElementById('minReviews').value || '0', 10);
       const limit = parseInt(document.getElementById('limit').value || '1000', 10);
       const selectedTypes = getSelectedTypes();
+      const excludedTypes = getExcludedTypes();
 
       const filtered = allRows.filter(r => {
         const hay = `${r.name} ${r.phone || ''} ${r.formatted_address} ${r.types}`.toLowerCase();
@@ -80,9 +87,14 @@
         if ((r.rating || 0) < minRating) return false;
         if ((r.user_ratings_total || 0) < minReviews) return false;
 
+        const rowTypes = String(r.types || '').split('|').filter(Boolean);
+
         if (selectedTypes.length > 0) {
-          const rowTypes = String(r.types || '').split('|').filter(Boolean);
           if (!selectedTypes.some(t => rowTypes.includes(t))) return false;
+        }
+
+        if (excludedTypes.length > 0) {
+          if (excludedTypes.some(t => rowTypes.includes(t))) return false;
         }
 
         return true;
@@ -120,12 +132,18 @@
       });
 
       const types = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30);
-      const wrap = document.getElementById('typesWrap');
-      wrap.innerHTML = types.map(([type, n]) =>
+      const includeWrap = document.getElementById('typesWrap');
+      const excludeWrap = document.getElementById('excludeTypesWrap');
+
+      includeWrap.innerHTML = types.map(([type, n]) =>
         `<label class="typeItem"><input class="typeChk" type="checkbox" value="${type}"> ${type} (${n})</label>`
       ).join('');
 
-      [...document.querySelectorAll('.typeChk')].forEach(el => el.addEventListener('change', applyFilters));
+      excludeWrap.innerHTML = types.map(([type, n]) =>
+        `<label class="typeItem"><input class="typeExcludeChk" type="checkbox" value="${type}"> ${type} (${n})</label>`
+      ).join('');
+
+      [...document.querySelectorAll('.typeChk, .typeExcludeChk')].forEach(el => el.addEventListener('change', applyFilters));
     }
 
     document.getElementById('q').addEventListener('input', applyFilters);
