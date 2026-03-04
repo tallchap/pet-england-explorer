@@ -2,3 +2,6 @@ data/email_batches/*.json
 data/email_batches/*.csv
 !data/email_batches/.gitkeep
 !data/email_batches/batch_0001_0005_results.json
+!data/email_batches/batch_0001_0500_results.json
+!data/email_batches/batch_0001_0500_results.csv
+!data/email_batches/batch_0001_0500_summary.json

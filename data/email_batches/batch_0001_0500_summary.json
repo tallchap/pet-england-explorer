@@ -1,0 +1,18 @@
+{
+  "batch": "batch_0001_0500",
+  "start": 0,
+  "size": 500,
+  "dryRun": true,
+  "zerobounce_enabled": false,
+  "with_best_email": 229,
+  "valid": 0,
+  "catch_all": 0,
+  "invalid": 0,
+  "unknown": 500,
+  "generated_at": "2026-03-04T23:35:18.187Z",
+  "files": {
+    "inputPath": "/Users/orilaptop/.openclaw/workspace/pet-england-explorer/data/email_batches/batch_0001_0500_input.json",
+    "jsonPath": "/Users/orilaptop/.openclaw/workspace/pet-england-explorer/data/email_batches/batch_0001_0500_results.json",
+    "csvPath": "/Users/orilaptop/.openclaw/workspace/pet-england-explorer/data/email_batches/batch_0001_0500_results.csv"
+  }
+}
