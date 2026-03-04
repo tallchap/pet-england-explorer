@@ -1,0 +1,3 @@
+data/email_batches/*.json
+data/email_batches/*.csv
+!data/email_batches/.gitkeep

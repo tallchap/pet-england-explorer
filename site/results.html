@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Email Batch Results</title>
+  <style>
+    body { font-family: Inter, system-ui, Arial, sans-serif; margin: 0; color: #111; }
+    .top { padding: 12px; border-bottom: 1px solid #e5e7eb; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .pill { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 999px; font-size: 12px; }
+    .muted { color: #6b7280; font-size: 13px; }
+    .wrap { padding: 12px; }
+    .tableOuter { border: 1px solid #e5e7eb; border-radius: 8px; overflow: auto; max-height: 78vh; }
+    table { border-collapse: collapse; min-width: 1400px; width: 100%; font-size: 13px; }
+    th, td { border-bottom: 1px solid #f0f0f0; padding: 8px; text-align: left; white-space: nowrap; }
+    th { position: sticky; top: 0; background: #f8fafc; z-index: 1; }
+    tr:hover { background: #fafafa; }
+    .status-valid { color: #166534; font-weight: 600; }
+    .status-invalid { color: #991b1b; font-weight: 600; }
+    .status-catch-all { color: #92400e; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <strong>Email batch results</strong>
+    <span id="meta" class="muted">Loading…</span>
+    <span class="pill">Horizontal scroll enabled</span>
+  </div>
+  <div class="wrap">
+    <div class="tableOuter">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Place ID</th>
+            <th>Address</th>
+            <th>Website</th>
+            <th>Best Email</th>
+            <th>Email Type</th>
+            <th>Verification</th>
+            <th>Sub-status</th>
+            <th>Confidence</th>
+            <th>Candidates</th>
+            <th>Source URL</th>
+            <th>Maps</th>
+            <th>Processed At</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const p = new URLSearchParams(location.search);
+    const batch = p.get('batch') || 'batch_0001_0500';
+    const dataPath = `../data/email_batches/${batch}_results.json`;
+
+    function statusClass(s) {
+      if (s === 'valid') return 'status-valid';
+      if (s === 'invalid') return 'status-invalid';
+      if (s === 'catch-all') return 'status-catch-all';
+      return '';
+    }
+
+    fetch(dataPath)
+      .then(r => {
+        if (!r.ok) throw new Error(`Could not load ${dataPath}`);
+        return r.json();
+      })
+      .then(rows => {
+        document.getElementById('meta').textContent = `${batch} · ${rows.length.toLocaleString()} rows`;
+        const tbody = document.getElementById('tbody');
+        tbody.innerHTML = rows.map(r => `
+          <tr>
+            <td>${r.name || ''}</td>
+            <td>${r.place_id || ''}</td>
+            <td>${r.formatted_address || ''}</td>
+            <td>${r.website_url ? `<a href="${r.website_url}" target="_blank">${r.website_domain || r.website_url}</a>` : ''}</td>
+            <td>${r.best_email || ''}</td>
+            <td>${r.email_type || ''}</td>
+            <td class="${statusClass(r.verification_status)}">${r.verification_status || ''}</td>
+            <td>${r.verification_sub_status || ''}</td>
+            <td>${r.confidence_score ?? ''}</td>
+            <td>${r.candidates_found ?? ''}</td>
+            <td>${r.source_url ? `<a href="${r.source_url}" target="_blank">source</a>` : ''}</td>
+            <td>${r.maps_url ? `<a href="${r.maps_url}" target="_blank">open</a>` : ''}</td>
+            <td>${r.processed_at || ''}</td>
+          </tr>
+        `).join('');
+      })
+      .catch(err => {
+        document.getElementById('meta').textContent = err.message + ' (run the batch script first)';
+      });
+  </script>
+</body>
+</html>
