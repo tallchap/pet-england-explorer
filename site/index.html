@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>England Pet Supplies Explorer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { font-family: Inter, system-ui, Arial, sans-serif; margin: 0; }
+    .top { padding: 10px; border-bottom: 1px solid #ddd; display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 8px; }
+    input { padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+    button { padding: 8px 10px; border: 1px solid #aaa; border-radius: 6px; background: #fff; cursor: pointer; }
+    #map { height: 48vh; }
+    .meta { padding: 8px 10px; font-size: 14px; color: #333; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { border-top: 1px solid #eee; padding: 6px; text-align: left; }
+    th { position: sticky; top: 0; background: #fafafa; }
+    .tableWrap { max-height: 42vh; overflow: auto; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <input id="q" placeholder="Search name/address/type..." />
+    <input id="minRating" type="number" step="0.1" min="0" max="5" placeholder="Min rating (e.g. 4)" />
+    <input id="minReviews" type="number" min="0" placeholder="Min reviews (e.g. 50)" />
+    <input id="limit" type="number" min="50" max="5000" value="1000" placeholder="Row limit" />
+    <button id="exportBtn">Export filtered CSV</button>
+  </div>
+  <div class="meta" id="meta">Loading…</div>
+  <div id="map"></div>
+  <div class="tableWrap">
+    <table>
+      <thead><tr><th>Name</th><th>Address</th><th>Rating</th><th>Reviews</th><th>Types</th><th>Map</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([53.5, -1.6], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    let allRows = [];
+    let markers = L.layerGroup().addTo(map);
+
+    function csv(rows) {
+      const headers = Object.keys(rows[0] || {});
+      const esc = v => {
+        if (v == null) return '';
+        const s = String(v);
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+      return [headers.join(','), ...rows.map(r => headers.map(h => esc(r[h])).join(','))].join('\n');
+    }
+
+    function applyFilters() {
+      const q = document.getElementById('q').value.trim().toLowerCase();
+      const minRating = parseFloat(document.getElementById('minRating').value || '0');
+      const minReviews = parseInt(document.getElementById('minReviews').value || '0', 10);
+      const limit = parseInt(document.getElementById('limit').value || '1000', 10);
+
+      const filtered = allRows.filter(r => {
+        const hay = `${r.name} ${r.formatted_address} ${r.types}`.toLowerCase();
+        if (q && !hay.includes(q)) return false;
+        if ((r.rating || 0) < minRating) return false;
+        if ((r.user_ratings_total || 0) < minReviews) return false;
+        return true;
+      }).slice(0, limit);
+
+      document.getElementById('meta').textContent = `Showing ${filtered.length.toLocaleString()} / ${allRows.length.toLocaleString()} locations`;
+
+      const tbody = document.getElementById('tbody');
+      tbody.innerHTML = filtered.map(r => `
+        <tr>
+          <td>${r.name || ''}</td>
+          <td>${r.formatted_address || ''}</td>
+          <td>${r.rating ?? ''}</td>
+          <td>${r.user_ratings_total ?? ''}</td>
+          <td>${r.types || ''}</td>
+          <td><a href="${r.maps_url}" target="_blank">Open</a></td>
+        </tr>
+      `).join('');
+
+      markers.clearLayers();
+      filtered.forEach(r => {
+        if (typeof r.lat === 'number' && typeof r.lng === 'number') {
+          L.circleMarker([r.lat, r.lng], { radius: 4 }).bindPopup(`<b>${r.name || ''}</b><br/>${r.formatted_address || ''}`).addTo(markers);
+        }
+      });
+
+      window.__filtered = filtered;
+    }
+
+    document.getElementById('q').addEventListener('input', applyFilters);
+    document.getElementById('minRating').addEventListener('input', applyFilters);
+    document.getElementById('minReviews').addEventListener('input', applyFilters);
+    document.getElementById('limit').addEventListener('input', applyFilters);
+    document.getElementById('exportBtn').addEventListener('click', () => {
+      const rows = window.__filtered || [];
+      const blob = new Blob([csv(rows)], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'pet_supplies_england_filtered.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    fetch('../data/pet_supplies_england.json')
+      .then(r => r.json())
+      .then(rows => { allRows = rows; applyFilters(); })
+      .catch(err => { document.getElementById('meta').textContent = 'Failed to load data: ' + err; });
+  </script>
+</body>
+</html>

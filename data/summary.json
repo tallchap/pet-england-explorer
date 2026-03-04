@@ -1,0 +1,6 @@
+{
+  "generated_at": "2026-03-04T17:50:51.650Z",
+  "total_unique_locations": 3203,
+  "query_count": 78,
+  "method": "Google Places API (New) Text Search (county + city queries, deduped by place_id)"
+}
