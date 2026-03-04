@@ -1,8 +1,10 @@
 {
-  "generated_at": "2026-03-04T19:13:54.326Z",
+  "generated_at": "2026-03-04T19:24:16.095Z",
   "total_unique_locations": 3203,
   "query_count": 78,
   "method": "Google Places API (New) Text Search (county + city queries, deduped by place_id)",
   "phone_enriched": true,
-  "phone_populated_count": 2720
+  "phone_populated_count": 2720,
+  "website_enriched": true,
+  "website_populated_count": 2401
 }
