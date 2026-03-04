@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>England Pet Supplies Explorer</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <style>
     body { font-family: Inter, system-ui, Arial, sans-serif; margin: 0; }
-    .top { padding: 10px; border-bottom: 1px solid #ddd; display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 8px; }
+    .top { padding: 10px; border-bottom: 1px solid #ddd; display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto auto auto; gap: 8px; }
     input { padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
     button { padding: 8px 10px; border: 1px solid #aaa; border-radius: 6px; background: #fff; cursor: pointer; }
     #map { height: 48vh; }
@@ -30,6 +31,8 @@
     <input id="minRating" type="number" step="0.1" min="0" max="5" placeholder="Min rating (e.g. 4)" />
     <input id="minReviews" type="number" min="0" placeholder="Min reviews (e.g. 50)" />
     <input id="limit" type="number" min="50" max="5000" value="1000" placeholder="Row limit" />
+    <button id="drawBoxBtn">Draw rectangle</button>
+    <button id="clearBoxBtn">Clear rectangle</button>
     <button id="exportBtn">Export filtered CSV</button>
   </div>
   <div class="typesBox">
@@ -48,6 +51,7 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
   <script>
     const map = L.map('map').setView([53.5, -1.6], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -56,6 +60,21 @@
 
     let allRows = [];
     let markers = L.layerGroup().addTo(map);
+    const drawnItems = new L.FeatureGroup().addTo(map);
+    let bboxBounds = null;
+
+    const drawControl = new L.Control.Draw({
+      draw: {
+        polygon: false,
+        polyline: false,
+        circle: false,
+        marker: false,
+        circlemarker: false,
+        rectangle: { shapeOptions: { color: '#2563eb', weight: 2 } }
+      },
+      edit: { featureGroup: drawnItems, edit: true, remove: true }
+    });
+    map.addControl(drawControl);
 
     function csv(rows) {
       const headers = Object.keys(rows[0] || {});
@@ -74,6 +93,30 @@
     function getExcludedTypes() {
       return [...document.querySelectorAll('.typeExcludeChk:checked')].map(x => x.value);
     }
+
+    function inBoundingBox(r) {
+      if (!bboxBounds) return true;
+      if (typeof r.lat !== 'number' || typeof r.lng !== 'number') return false;
+      return bboxBounds.contains([r.lat, r.lng]);
+    }
+
+    map.on(L.Draw.Event.CREATED, (e) => {
+      drawnItems.clearLayers();
+      drawnItems.addLayer(e.layer);
+      bboxBounds = e.layer.getBounds();
+      applyFilters();
+    });
+
+    map.on(L.Draw.Event.EDITED, () => {
+      const layers = drawnItems.getLayers();
+      bboxBounds = layers[0] ? layers[0].getBounds() : null;
+      applyFilters();
+    });
+
+    map.on(L.Draw.Event.DELETED, () => {
+      bboxBounds = null;
+      applyFilters();
+    });
 
     function applyFilters() {
       const q = document.getElementById('q').value.trim().toLowerCase();
@@ -102,9 +145,14 @@
         return true;
       });
 
-      const filtered = matched.slice(0, limit);
+      const bboxMatched = matched.filter(inBoundingBox);
+      const filtered = bboxMatched.slice(0, limit);
 
-      document.getElementById('meta').textContent = `Showing ${filtered.length.toLocaleString()} / ${matched.length.toLocaleString()} matched (${allRows.length.toLocaleString()} total)`;
+      const scopeLabel = bboxBounds ? 'in box' : 'matched';
+      const tail = bboxBounds
+        ? ` (${matched.length.toLocaleString()} matched before box, ${allRows.length.toLocaleString()} total)`
+        : ` (${allRows.length.toLocaleString()} total)`;
+      document.getElementById('meta').textContent = `Showing ${filtered.length.toLocaleString()} / ${bboxMatched.length.toLocaleString()} ${scopeLabel}${tail}`;
 
       const tbody = document.getElementById('tbody');
       tbody.innerHTML = filtered.map(r => `
@@ -157,6 +205,14 @@
     document.getElementById('minRating').addEventListener('input', applyFilters);
     document.getElementById('minReviews').addEventListener('input', applyFilters);
     document.getElementById('limit').addEventListener('input', applyFilters);
+    document.getElementById('drawBoxBtn').addEventListener('click', () => {
+      new L.Draw.Rectangle(map, { shapeOptions: { color: '#2563eb', weight: 2 } }).enable();
+    });
+    document.getElementById('clearBoxBtn').addEventListener('click', () => {
+      drawnItems.clearLayers();
+      bboxBounds = null;
+      applyFilters();
+    });
     document.getElementById('exportBtn').addEventListener('click', () => {
       const rows = window.__filtered || [];
       const blob = new Blob([csv(rows)], { type: 'text/csv;charset=utf-8;' });
