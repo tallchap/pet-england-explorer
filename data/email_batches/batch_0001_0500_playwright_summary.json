@@ -1,0 +1,26 @@
+{
+  "batch": "batch_0001_0500_playwright",
+  "start": 0,
+  "size": 500,
+  "dryRun": true,
+  "crawler": "playwright",
+  "settings": {
+    "concurrency": 8,
+    "maxDepth": 2,
+    "maxPagesPerDomain": 100,
+    "navTimeoutMs": 12000
+  },
+  "zerobounce_enabled": false,
+  "with_best_email": 102,
+  "valid": 0,
+  "catch_all": 0,
+  "invalid": 0,
+  "unknown": 500,
+  "avg_pages_visited": 18.29,
+  "generated_at": "2026-03-05T01:09:49.163Z",
+  "files": {
+    "inputPath": "/Users/orilaptop/.openclaw/workspace/pet-england-explorer/data/email_batches/batch_0001_0500_playwright_input.json",
+    "jsonPath": "/Users/orilaptop/.openclaw/workspace/pet-england-explorer/data/email_batches/batch_0001_0500_playwright_results.json",
+    "csvPath": "/Users/orilaptop/.openclaw/workspace/pet-england-explorer/data/email_batches/batch_0001_0500_playwright_results.csv"
+  }
+}
