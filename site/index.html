@@ -225,7 +225,7 @@
       URL.revokeObjectURL(url);
     });
     document.getElementById('resultsBtn').addEventListener('click', () => {
-      window.open('./results.html', '_blank');
+      window.open('./results.html?batch=batch_0001_0500_playwright', '_blank');
     });
 
     fetch('../data/pet_supplies_england.json')
