@@ -18,6 +18,9 @@
     .status-valid { color: #166534; font-weight: 600; }
     .status-invalid { color: #991b1b; font-weight: 600; }
     .status-catch-all { color: #92400e; font-weight: 600; }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { background: #eef2ff; }
+    .checkline { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -25,25 +28,26 @@
     <strong>Email batch results</strong>
     <span id="meta" class="muted">Loading…</span>
     <span class="pill">Horizontal scroll enabled</span>
+    <label class="checkline"><input type="checkbox" id="onlyWithEmail"> only rows with non-empty email</label>
   </div>
   <div class="wrap">
     <div class="tableOuter">
       <table>
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Place ID</th>
-            <th>Address</th>
-            <th>Website</th>
-            <th>Best Email</th>
-            <th>Email Type</th>
-            <th>Verification</th>
-            <th>Sub-status</th>
-            <th>Confidence</th>
-            <th>Candidates</th>
+            <th class="sortable" data-key="name">Name</th>
+            <th class="sortable" data-key="place_id">Place ID</th>
+            <th class="sortable" data-key="formatted_address">Address</th>
+            <th class="sortable" data-key="website_domain">Website</th>
+            <th class="sortable" data-key="best_email">Best Email</th>
+            <th class="sortable" data-key="email_type">Email Type</th>
+            <th class="sortable" data-key="verification_status">Verification</th>
+            <th class="sortable" data-key="verification_sub_status">Sub-status</th>
+            <th class="sortable" data-key="confidence_score">Confidence</th>
+            <th class="sortable" data-key="candidates_found">Candidates</th>
             <th>Source URL</th>
             <th>Maps</th>
-            <th>Processed At</th>
+            <th class="sortable" data-key="processed_at">Processed At</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -64,31 +68,73 @@
       return '';
     }
 
+    let allRows = [];
+    let sortKey = 'best_email';
+    let sortDir = 'asc';
+
+    function asComparable(v) {
+      if (v == null) return '';
+      const n = Number(v);
+      if (!Number.isNaN(n) && String(v).trim() !== '') return n;
+      return String(v).toLowerCase();
+    }
+
+    function render() {
+      const onlyWithEmail = document.getElementById('onlyWithEmail').checked;
+      let rows = [...allRows];
+      if (onlyWithEmail) rows = rows.filter(r => String(r.best_email || '').trim() !== '');
+
+      rows.sort((a, b) => {
+        const av = asComparable(a[sortKey]);
+        const bv = asComparable(b[sortKey]);
+        if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
+        return sortDir === 'asc'
+          ? String(av).localeCompare(String(bv))
+          : String(bv).localeCompare(String(av));
+      });
+
+      document.getElementById('meta').textContent = `${batch} · showing ${rows.length.toLocaleString()} / ${allRows.length.toLocaleString()} rows · sort: ${sortKey} ${sortDir}`;
+
+      const tbody = document.getElementById('tbody');
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          <td>${r.name || ''}</td>
+          <td>${r.place_id || ''}</td>
+          <td>${r.formatted_address || ''}</td>
+          <td>${r.website_url ? `<a href="${r.website_url}" target="_blank">${r.website_domain || r.website_url}</a>` : ''}</td>
+          <td>${r.best_email || ''}</td>
+          <td>${r.email_type || ''}</td>
+          <td class="${statusClass(r.verification_status)}">${r.verification_status || ''}</td>
+          <td>${r.verification_sub_status || ''}</td>
+          <td>${r.confidence_score ?? ''}</td>
+          <td>${r.candidates_found ?? ''}</td>
+          <td>${r.source_url ? `<a href="${r.source_url}" target="_blank">source</a>` : ''}</td>
+          <td>${r.maps_url ? `<a href="${r.maps_url}" target="_blank">open</a>` : ''}</td>
+          <td>${r.processed_at || ''}</td>
+        </tr>
+      `).join('');
+    }
+
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.key;
+        if (!key) return;
+        if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        else { sortKey = key; sortDir = 'asc'; }
+        render();
+      });
+    });
+
+    document.getElementById('onlyWithEmail').addEventListener('change', render);
+
     fetch(dataPath)
       .then(r => {
         if (!r.ok) throw new Error(`Could not load ${dataPath}`);
         return r.json();
       })
       .then(rows => {
-        document.getElementById('meta').textContent = `${batch} · ${rows.length.toLocaleString()} rows`;
-        const tbody = document.getElementById('tbody');
-        tbody.innerHTML = rows.map(r => `
-          <tr>
-            <td>${r.name || ''}</td>
-            <td>${r.place_id || ''}</td>
-            <td>${r.formatted_address || ''}</td>
-            <td>${r.website_url ? `<a href="${r.website_url}" target="_blank">${r.website_domain || r.website_url}</a>` : ''}</td>
-            <td>${r.best_email || ''}</td>
-            <td>${r.email_type || ''}</td>
-            <td class="${statusClass(r.verification_status)}">${r.verification_status || ''}</td>
-            <td>${r.verification_sub_status || ''}</td>
-            <td>${r.confidence_score ?? ''}</td>
-            <td>${r.candidates_found ?? ''}</td>
-            <td>${r.source_url ? `<a href="${r.source_url}" target="_blank">source</a>` : ''}</td>
-            <td>${r.maps_url ? `<a href="${r.maps_url}" target="_blank">open</a>` : ''}</td>
-            <td>${r.processed_at || ''}</td>
-          </tr>
-        `).join('');
+        allRows = rows;
+        render();
       })
       .catch(err => {
         document.getElementById('meta').textContent = `${err.message}. Tried: ${dataPath}`;
